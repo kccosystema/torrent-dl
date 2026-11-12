@@ -38,6 +38,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements-app.txt
+          python -c "import libtorrent; print('libtorrent', libtorrent.__version__)"
 
       - name: Build
         run: pyinstaller -y TorrentDL.spec
@@ -47,7 +48,8 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then BIN=./dist/TorrentDL.exe; else BIN=./dist/TorrentDL.app/Contents/MacOS/TorrentDL; fi
           set +e
-          timeout 120 "$BIN" --selftest --state-dir "$RUNNER_TEMP/st"
+          # (macOS has no `timeout` command; use Python's)
+          python -c "import subprocess,sys; sys.exit(subprocess.run(sys.argv[1:], timeout=120).returncode)" "$BIN" --selftest --state-dir "$RUNNER_TEMP/st"
           code=$?
           set -e
           cat "$RUNNER_TEMP/st/selftest.txt" || echo "no selftest output"
