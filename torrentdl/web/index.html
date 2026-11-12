@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TorrentDL</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --line: #e3e6eb; --text: #16181d; --muted: #6b7280;
+  --accent: #2563eb; --accent-ink: #ffffff; --accent-soft: #e8efff;
+  --ok: #15803d; --ok-soft: #e7f6ec; --warn: #b45309; --warn-soft: #fdf3e2;
+  --bad: #b91c1c; --bad-soft: #fde8e8; --track: #e9ecf1;
+  --radius: 10px; --shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 8px rgba(0,0,0,.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111317; --panel: #1a1d23; --line: #2a2e36; --text: #eceef2; --muted: #9aa1ad;
+    --accent: #5b8cff; --accent-ink: #0b0d10; --accent-soft: #1d2740;
+    --ok: #4ade80; --ok-soft: #15291d; --warn: #fbbf24; --warn-soft: #2d2410;
+    --bad: #f87171; --bad-soft: #2f1717; --track: #2a2e36;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--text);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, sans-serif;
+  display: flex; flex-direction: column; -webkit-user-select: none; user-select: none;
+}
+button {
+  font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 12px; cursor: pointer; white-space: nowrap;
+}
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+button.primary:hover { filter: brightness(1.08); }
+button.ghost { background: transparent; border-color: transparent; padding: 6px 8px; color: var(--muted); }
+button.ghost:hover { background: var(--track); color: var(--text); }
+button.danger { color: var(--bad); }
+input, textarea, select {
+  font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 10px; -webkit-user-select: text; user-select: text;
+}
+input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+
+header {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 14px 18px; background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 16px; margin-right: auto; }
+.brand svg { color: var(--accent); }
+.stats { display: flex; gap: 16px; color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 8px; }
+.stats b { color: var(--text); font-weight: 600; }
+
+.savebar {
+  display: flex; align-items: center; gap: 8px; padding: 9px 18px; color: var(--muted);
+  border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap;
+}
+.savebar code {
+  color: var(--text); font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60vw;
+}
+.savebar .spacer { flex: 1; }
+
+.toolbar { display: flex; align-items: center; gap: 6px; padding: 12px 18px 4px; flex-wrap: wrap; }
+.tabs { display: flex; gap: 2px; background: var(--track); padding: 3px; border-radius: 9px; }
+.tabs button { border: 0; background: transparent; padding: 5px 12px; border-radius: 7px; color: var(--muted); }
+.tabs button.on { background: var(--panel); color: var(--text); box-shadow: var(--shadow); font-weight: 600; }
+.tabs .n { font-variant-numeric: tabular-nums; opacity: .7; margin-left: 4px; font-weight: 400; }
+.toolbar .spacer { flex: 1; }
+#search { width: 200px; }
+
+main { flex: 1; overflow-y: auto; padding: 8px 18px 24px; position: relative; }
+#list { display: flex; flex-direction: column; gap: 8px; }
+
+.row {
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 12px 14px; box-shadow: var(--shadow); display: grid;
+  grid-template-columns: 1fr auto; gap: 6px 12px; align-items: center;
+}
+.row .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.row .acts { display: flex; gap: 2px; grid-row: span 2; align-self: center; }
+.row .meta { color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; min-width: 0; }
+.row .bar { grid-column: 1 / -1; height: 6px; background: var(--track); border-radius: 99px; overflow: hidden; }
+.row .bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .6s ease; }
+.row.done .bar i { background: var(--ok); }
+.row.err .bar i { background: var(--bad); }
+.row.stalled .bar i, .row.paused .bar i { background: var(--muted); }
+.row .hint { grid-column: 1 / -1; font-size: 12.5px; color: var(--warn); background: var(--warn-soft); padding: 6px 9px; border-radius: 7px; -webkit-user-select: text; user-select: text; }
+.row.err .hint { color: var(--bad); background: var(--bad-soft); }
+
+.pill { font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
+.pill.done { background: var(--ok-soft); color: var(--ok); }
+.pill.err { background: var(--bad-soft); color: var(--bad); }
+.pill.stalled { background: var(--warn-soft); color: var(--warn); }
+.pill.paused { background: var(--track); color: var(--muted); }
+.dot { opacity: .5; }
+
+.empty {
+  border: 2px dashed var(--line); border-radius: 14px; padding: 56px 24px; text-align: center;
+  color: var(--muted); margin-top: 12px;
+}
+.empty h2 { color: var(--text); margin: 12px 0 6px; font-size: 18px; }
+.empty p { margin: 0 auto 18px; max-width: 440px; }
+.empty .btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.none { color: var(--muted); text-align: center; padding: 40px 0; }
+
+#drop {
+  position: fixed; inset: 0; background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: 3px dashed var(--accent); display: none; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 700; color: var(--accent); z-index: 50; pointer-events: none;
+}
+body.dragging #drop { display: flex; }
+
+dialog {
+  border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--text);
+  padding: 20px; width: min(520px, calc(100vw - 32px)); box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+dialog::backdrop { background: rgba(0,0,0,.35); }
+dialog h3 { margin: 0 0 12px; }
+dialog .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+dialog textarea { width: 100%; min-height: 150px; resize: vertical; font: 12.5px ui-monospace, Menlo, Consolas, monospace; }
+.field { display: grid; grid-template-columns: 1fr 130px; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.field:last-of-type { border-bottom: 0; }
+.field small { display: block; color: var(--muted); }
+.field input[type=number] { width: 100%; }
+.field input[type=checkbox] { justify-self: end; width: 18px; height: 18px; }
+
+#toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 60; max-width: min(420px, calc(100vw - 32px)); }
+.toast { background: var(--text); color: var(--bg); padding: 10px 14px; border-radius: 9px; box-shadow: 0 6px 24px rgba(0,0,0,.2); font-size: 13px; animation: in .2s ease; }
+.toast.error { background: var(--bad); color: #fff; }
+.toast.success { background: var(--ok); color: #fff; }
+@media (prefers-color-scheme: dark) { .toast.success, .toast.error { color: #0b0d10; } }
+@keyframes in { from { transform: translateY(8px); opacity: 0; } }
+
+.menu { position: fixed; background: var(--panel); border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 10px 30px rgba(0,0,0,.18); padding: 4px; z-index: 70; min-width: 210px; }
+.menu button { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 8px 10px; border-radius: 6px; }
+.menu button:hover { background: var(--track); }
+
+@media (max-width: 700px) {
+  .stats { width: 100%; order: 3; }
+  #search { width: 100%; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+    TorrentDL
+  </div>
+  <div class="stats">
+    <span>↓ <b id="sDown">0 B/s</b></span>
+    <span>↑ <b id="sUp">0 B/s</b></span>
+    <span><b id="sDone">0</b> of <b id="sCount">0</b> done</span>
+  </div>
+  <button id="bMagnet">Paste magnet links</button>
+  <button id="bFolder">Add folder</button>
+  <button id="bFiles" class="primary">Add torrent files</button>
+  <button id="bSettings" class="ghost" title="Settings" aria-label="Settings">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+</header>
+
+<div class="savebar">
+  <span>Saving new downloads to</span>
+  <code id="savePath">…</code>
+  <button class="ghost" id="bChange">Change…</button>
+  <span class="spacer"></span>
+  <button class="ghost" id="bOpenSave">Open folder</button>
+</div>
+
+<div class="toolbar">
+  <div class="tabs" id="tabs">
+    <button data-f="all" class="on">All<span class="n" id="nAll"></span></button>
+    <button data-f="active">Downloading<span class="n" id="nActive"></span></button>
+    <button data-f="done">Done<span class="n" id="nDone"></span></button>
+    <button data-f="problem">Needs attention<span class="n" id="nProblem"></span></button>
+  </div>
+  <span class="spacer"></span>
+  <input id="search" type="search" placeholder="Search…">
+  <button class="ghost" id="bMore">More ▾</button>
+</div>
+
+<main>
+  <div id="list"></div>
+  <div class="empty" id="empty" hidden>
+    <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+    <h2>Drop your torrent files here</h2>
+    <p>Drag in <b>.torrent</b> files or a whole folder of them, or use the buttons. Everything downloads into the folder shown above, a few at a time.</p>
+    <div class="btns">
+      <button class="primary" data-proxy="bFiles">Add torrent files</button>
+      <button data-proxy="bFolder">Add a folder of torrents</button>
+      <button data-proxy="bMagnet">Paste magnet links</button>
+    </div>
+  </div>
+  <div class="none" id="none" hidden>Nothing here.</div>
+</main>
+
+<div id="drop">Drop to add</div>
+<div id="toasts"></div>
+
+<input type="file" id="fFiles" accept=".torrent,.txt" multiple hidden>
+<input type="file" id="fFolder" webkitdirectory multiple hidden>
+
+<dialog id="dMagnet">
+  <h3>Paste magnet links</h3>
+  <textarea id="tMagnet" placeholder="magnet:?xt=urn:btih:…&#10;One per line. You can paste lots at once."></textarea>
+  <div class="foot"><button data-close>Cancel</button><button class="primary" id="bMagnetAdd">Add</button></div>
+</dialog>
+
+<dialog id="dSettings">
+  <h3>Settings</h3>
+  <div class="field"><label for="iActive">Download at the same time<small>Others wait in line.</small></label><input type="number" id="iActive" min="1" max="50"></div>
+  <div class="field"><label for="iDown">Download speed limit<small>KB/s, 0 = no limit</small></label><input type="number" id="iDown" min="0"></div>
+  <div class="field"><label for="iUp">Upload speed limit<small>KB/s, 0 = no limit</small></label><input type="number" id="iUp" min="0"></div>
+  <div class="field"><label for="iSeed">Keep sharing after finishing<small>Helps others download the same files.</small></label><input type="checkbox" id="iSeed"></div>
+  <div class="field"><label for="iPort">Network port<small>Forward this on your router for faster downloads. Takes effect after restart.</small></label><input type="number" id="iPort" min="1024" max="65535"></div>
+  <div class="foot"><button data-close>Cancel</button><button class="primary" id="bSave">Save</button></div>
+</dialog>
+
+<script>
+"use strict";
+const token = new URLSearchParams(location.search).get("token") || "";
+const $ = (id) => document.getElementById(id);
+let state = { torrents: [], settings: {} };
+let filter = "all", query = "", lastMsg = 0, native = false;
+const rows = new Map();
+
+// ---------- helpers
+function fmtBytes(n) {
+  if (!n) return "0 B";
+  const u = ["B", "KB", "MB", "GB", "TB"]; let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (n >= 100 || i === 0 ? n.toFixed(0) : n.toFixed(1)) + " " + u[i];
+}
+function fmtEta(s) {
+  if (s == null) return "";
+  if (s < 60) return "under a minute left";
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  if (d) return `${d}d ${h}h left`;
+  if (h) return `${h}h ${m}m left`;
+  return `${m} min left`;
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+async function api(path, body) {
+  const r = await fetch(path, {
+    method: body === undefined ? "GET" : "POST",
+    headers: { "X-Token": token, "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`${r.status}`);
+  return r.json();
+}
+function toast(text, kind = "info") {
+  const el = document.createElement("div");
+  el.className = "toast " + kind; el.textContent = text;
+  $("toasts").appendChild(el);
+  setTimeout(() => el.remove(), kind === "error" ? 8000 : 4000);
+}
+
+// ---------- classification
+function kind(t) {
+  if (t.status === "Error") return "err";
+  if (t.finished) return "done";
+  if (t.status === "Paused" || t.status === "Queued") return "paused";
+  if (t.status === "Looking for peers" || (t.status === "Getting torrent info" && t.peers === 0)) return "stalled";
+  return "active";
+}
+function matches(t) {
+  const k = kind(t);
+  if (filter === "active" && (k === "done" || k === "err")) return false;
+  if (filter === "done" && k !== "done") return false;
+  if (filter === "problem" && k !== "err" && k !== "stalled") return false;
+  return !query || t.name.toLowerCase().includes(query);
+}
+
+// ---------- rendering
+function rowEl(t) {
+  let el = rows.get(t.id);
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "row";
+    el.innerHTML = `<div class="name"></div>
+      <div class="acts">
+        <button class="ghost act-toggle"></button>
+        <button class="ghost act-open" title="Show in folder">Show</button>
+        <button class="ghost act-more" title="More" aria-label="More">⋯</button>
+      </div>
+      <div class="meta"></div><div class="bar"><i></i></div><div class="hint" hidden></div>`;
+    el.querySelector(".act-toggle").onclick = (e) => act(el.dataset.id, e.currentTarget.dataset.a);
+    el.querySelector(".act-open").onclick = () => act(el.dataset.id, "open");
+    el.querySelector(".act-more").onclick = (e) => rowMenu(e, el.dataset.id);
+    el.dataset.id = t.id;
+    rows.set(t.id, el);
+  }
+  const k = kind(t);
+  el.className = "row " + k;
+  el.querySelector(".name").textContent = t.name;
+  el.querySelector(".name").title = t.name;
+  const tog = el.querySelector(".act-toggle");
+  tog.textContent = t.finished ? "Verify" : (t.paused ? "Resume" : "Pause");
+  tog.dataset.a = (t.finished || t.paused) ? "resume" : "pause";
+  el.querySelector(".act-open").hidden = !t.has_metadata;
+
+  const parts = [`<span class="pill ${k === "active" ? "" : k}">${esc(t.status)}</span>`];
+  if (t.has_metadata && t.size) {
+    parts.push(t.finished ? fmtBytes(t.size) : `${fmtBytes(t.done)} of ${fmtBytes(t.size)} (${(t.progress * 100).toFixed(1)}%)`);
+  }
+  if (!t.finished && !t.paused) {
+    if (t.down) parts.push(`↓ ${fmtBytes(t.down)}/s`);
+    parts.push(`${t.peers} peer${t.peers === 1 ? "" : "s"}`);
+    if (t.eta != null) parts.push(fmtEta(t.eta));
+  }
+  if (t.up) parts.push(`↑ ${fmtBytes(t.up)}/s`);
+  el.querySelector(".meta").innerHTML = parts.join('<span class="dot">·</span>');
+  el.querySelector(".bar i").style.width = (t.progress * 100).toFixed(2) + "%";
+
+  const hint = el.querySelector(".hint");
+  let msg = "";
+  if (k === "err") msg = t.error || "Something went wrong with this download.";
+  else if (k === "stalled") msg = t.has_metadata
+    ? "No one is sharing this right now. It will keep looking and start on its own if someone comes online."
+    : "Looking for anyone who has this magnet link's files. Old links can take a while, or may have no one sharing them anymore.";
+  hint.hidden = !msg; hint.textContent = msg;
+  return el;
+}
+
+function render() {
+  const ts = state.torrents;
+  const counts = { all: ts.length, active: 0, done: 0, problem: 0 };
+  for (const t of ts) {
+    const k = kind(t);
+    if (k === "done") counts.done++;
+    else if (k !== "err") counts.active++;
+    if (k === "err" || k === "stalled") counts.problem++;
+  }
+  $("nAll").textContent = counts.all || "";
+  $("nActive").textContent = counts.active || "";
+  $("nDone").textContent = counts.done || "";
+  $("nProblem").textContent = counts.problem || "";
+
+  const tot = state.totals || {};
+  $("sDown").textContent = fmtBytes(tot.down) + "/s";
+  $("sUp").textContent = fmtBytes(tot.up) + "/s";
+  $("sDone").textContent = tot.finished || 0;
+  $("sCount").textContent = tot.count || 0;
+  $("savePath").textContent = state.settings.save_path || "";
+  $("savePath").title = state.settings.save_path || "";
+
+  const list = $("list");
+  const seen = new Set();
+  const visible = ts.filter(matches);
+  // keep DOM order in sync without rebuilding everything
+  let prev = null;
+  for (const t of visible) {
+    const el = rowEl(t);
+    seen.add(t.id);
+    const want = prev ? prev.nextSibling : list.firstChild;
+    if (want !== el) list.insertBefore(el, want);
+    prev = el;
+  }
+  for (const [id, el] of rows) {
+    if (!seen.has(id)) { el.remove(); if (!ts.some(t => t.id === id)) rows.delete(id); }
+  }
+  $("empty").hidden = ts.length > 0;
+  $("none").hidden = ts.length === 0 || visible.length > 0;
+}
+
+async function poll() {
+  try {
+    const s = await api("/api/state?since=" + lastMsg);
+    state = s;
+    for (const m of s.messages) { toast(m.text, m.kind); lastMsg = Math.max(lastMsg, m.id); }
+    render();
+  } catch (e) {
+    // app is shutting down or restarting; try again shortly
+  }
+  setTimeout(poll, 1000);
+}
+
+// ---------- actions
+async function act(id, action) {
+  await api("/api/action", { id, action });
+  poll_soon();
+}
+let soon = null;
+function poll_soon() { clearTimeout(soon); soon = setTimeout(async () => { try { state = await api("/api/state?since=" + lastMsg); render(); } catch {} }, 150); }
+
+function closeMenus() { document.querySelectorAll(".menu").forEach(m => m.remove()); }
+function showMenu(e, items) {
+  e.stopPropagation(); closeMenus();
+  const m = document.createElement("div"); m.className = "menu";
+  for (const [label, fn, cls] of items) {
+    const b = document.createElement("button"); b.textContent = label; if (cls) b.className = cls;
+    b.onclick = () => { closeMenus(); fn(); }; m.appendChild(b);
+  }
+  document.body.appendChild(m);
+  const r = e.currentTarget.getBoundingClientRect();
+  m.style.top = Math.min(r.bottom + 4, innerHeight - m.offsetHeight - 8) + "px";
+  m.style.left = Math.max(8, r.right - m.offsetWidth) + "px";
+}
+function rowMenu(e, id) {
+  const t = state.torrents.find(x => x.id === id); if (!t) return;
+  showMenu(e, [
+    ["Check files again", () => act(id, "recheck")],
+    ["Remove from list (keep files)", () => act(id, "remove")],
+    ["Remove and delete files…", () => {
+      if (confirm(`Delete the downloaded files for "${t.name}"? This can't be undone.`)) act(id, "delete");
+    }, "danger"],
+  ]);
+}
+$("bMore").onclick = (e) => showMenu(e, [
+  ["Pause all", () => api("/api/all", { action: "pause" }).then(poll_soon)],
+  ["Resume all", () => api("/api/all", { action: "resume" }).then(poll_soon)],
+  ["Clear finished from list", () => api("/api/all", { action: "clear_done" }).then(poll_soon)],
+]);
+document.addEventListener("click", closeMenus);
+
+// ---------- adding
+async function sendFiles(files) {
+  const list = [...files].filter(f => /\.(torrent|txt)$/i.test(f.name));
+  if (!list.length) { toast("No .torrent files found there.", "error"); return; }
+  let added = 0;
+  for (let i = 0; i < list.length; i += 40) {
+    const batch = list.slice(i, i + 40);
+    const torrents = [], magnets = [];
+    for (const f of batch) {
+      if (/\.txt$/i.test(f.name)) {
+        magnets.push(...(await f.text()).split(/\r?\n/).filter(l => l.trim().startsWith("magnet:")));
+      } else {
+        const buf = new Uint8Array(await f.arrayBuffer());
+        let bin = ""; for (let j = 0; j < buf.length; j += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(j, j + 0x8000));
+        torrents.push({ name: f.name, data: btoa(bin) });
+      }
+    }
+    added += (await api("/api/add", { torrents, magnets })).added;
+  }
+  toast(`Added ${added} torrent${added === 1 ? "" : "s"}.`, "success");
+  poll_soon();
+}
+async function addPaths(paths) {
+  if (!paths || !paths.length) return;
+  const r = await api("/api/add", { paths });
+  toast(r.added ? `Added ${r.added} torrent${r.added === 1 ? "" : "s"}.` : "No .torrent files found there.", r.added ? "success" : "error");
+  poll_soon();
+}
+$("bFiles").onclick = async () => native ? addPaths(await pywebview.api.choose_torrent_files()) : $("fFiles").click();
+$("bFolder").onclick = async () => {
+  if (native) { const p = await pywebview.api.choose_folder(); if (p) addPaths([p]); }
+  else $("fFolder").click();
+};
+$("fFiles").onchange = (e) => { sendFiles(e.target.files); e.target.value = ""; };
+$("fFolder").onchange = (e) => { sendFiles(e.target.files); e.target.value = ""; };
+$("bMagnet").onclick = () => { $("tMagnet").value = ""; $("dMagnet").showModal(); };
+$("bMagnetAdd").onclick = async () => {
+  const magnets = $("tMagnet").value.split(/\s+/).filter(l => l.startsWith("magnet:"));
+  $("dMagnet").close();
+  if (!magnets.length) return toast("No magnet links found in what you pasted.", "error");
+  const r = await api("/api/add", { magnets });
+  toast(`Added ${r.added} magnet link${r.added === 1 ? "" : "s"}.`, "success");
+  poll_soon();
+};
+document.querySelectorAll("[data-proxy]").forEach(b => b.onclick = () => $(b.dataset.proxy).click());
+document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => b.closest("dialog").close());
+
+// drag & drop (files and folders)
+let dragDepth = 0;
+addEventListener("dragenter", (e) => { e.preventDefault(); dragDepth++; document.body.classList.add("dragging"); });
+addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove("dragging"); } });
+addEventListener("dragover", (e) => e.preventDefault());
+addEventListener("drop", async (e) => {
+  e.preventDefault(); dragDepth = 0; document.body.classList.remove("dragging");
+  const files = [];
+  const walk = (entry) => new Promise((res) => {
+    if (entry.isFile) entry.file((f) => { files.push(f); res(); }, () => res());
+    else if (entry.isDirectory) {
+      const reader = entry.createReader(); const all = [];
+      const more = () => reader.readEntries(async (ents) => {
+        if (!ents.length) { await Promise.all(all.map(walk)); res(); }
+        else { all.push(...ents); more(); }
+      }, () => res());
+      more();
+    } else res();
+  });
+  const items = [...(e.dataTransfer.items || [])];
+  if (items.length && items[0].webkitGetAsEntry) {
+    await Promise.all(items.map(i => i.webkitGetAsEntry()).filter(Boolean).map(walk));
+  } else files.push(...e.dataTransfer.files);
+  const text = e.dataTransfer.getData("text");
+  if (text && text.includes("magnet:")) {
+    const magnets = text.split(/\s+/).filter(l => l.startsWith("magnet:"));
+    const r = await api("/api/add", { magnets }); toast(`Added ${r.added} magnet link(s).`, "success");
+  }
+  if (files.length) sendFiles(files);
+});
+// paste magnets anywhere
+addEventListener("paste", async (e) => {
+  if (e.target.closest && e.target.closest("textarea, input")) return;
+  const text = e.clipboardData.getData("text");
+  const magnets = text.split(/\s+/).filter(l => l.startsWith("magnet:"));
+  if (magnets.length) { const r = await api("/api/add", { magnets }); toast(`Added ${r.added} magnet link(s).`, "success"); poll_soon(); }
+});
+
+// ---------- save folder & settings
+$("bChange").onclick = async () => {
+  let p;
+  if (native) p = await pywebview.api.choose_folder();
+  else p = prompt("Save new downloads to this folder:", state.settings.save_path);
+  if (p) { await api("/api/settings", { save_path: p }); toast("New downloads will be saved to " + p); poll_soon(); }
+};
+$("bOpenSave").onclick = () => api("/api/open_folder", {});
+$("bSettings").onclick = () => {
+  const s = state.settings;
+  $("iActive").value = s.max_active; $("iDown").value = s.down_limit; $("iUp").value = s.up_limit;
+  $("iSeed").checked = !!s.keep_seeding; $("iPort").value = s.port;
+  $("dSettings").showModal();
+};
+$("bSave").onclick = async () => {
+  await api("/api/settings", {
+    max_active: +$("iActive").value || 5, down_limit: +$("iDown").value || 0,
+    up_limit: +$("iUp").value || 0, keep_seeding: $("iSeed").checked, port: +$("iPort").value || 6881,
+  });
+  $("dSettings").close(); toast("Settings saved."); poll_soon();
+};
+
+// ---------- filters
+$("tabs").onclick = (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  filter = b.dataset.f;
+  [...$("tabs").children].forEach(x => x.classList.toggle("on", x === b));
+  render();
+};
+$("search").oninput = (e) => { query = e.target.value.trim().toLowerCase(); render(); };
+
+addEventListener("pywebviewready", () => { native = true; });
+if (window.pywebview && window.pywebview.api) native = true;
+poll();
+</script>
+</body>
+</html>

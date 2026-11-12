@@ -1,0 +1,5 @@
+# everything needed to build the desktop app
+libtorrent==2.0.11
+pywebview>=5.3,<7
+pyinstaller>=6.10
+pillow>=10

@@ -3,3 +3,5 @@ __pycache__/
 downloads/
 .torrent-dl/
 .venv/
+build/
+dist/

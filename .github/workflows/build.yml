@@ -1,0 +1,92 @@
+name: Build apps
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: TorrentDL-Windows.exe
+          - os: macos-latest          # Apple Silicon (M1 and newer)
+            asset: TorrentDL-Mac-AppleSilicon.dmg
+          - os: macos-15-intel        # older Intel Macs
+            asset: TorrentDL-Mac-Intel.dmg
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-app.txt
+
+      - name: Build
+        run: pyinstaller -y TorrentDL.spec
+
+      - name: Self-test the built app
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then BIN=./dist/TorrentDL.exe; else BIN=./dist/TorrentDL.app/Contents/MacOS/TorrentDL; fi
+          set +e
+          "$BIN" --selftest --state-dir "$RUNNER_TEMP/st"
+          code=$?
+          set -e
+          cat "$RUNNER_TEMP/st/selftest.txt" || echo "no selftest output"
+          exit $code
+
+      - name: Package
+        run: |
+          mkdir -p out
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp dist/TorrentDL.exe "out/${{ matrix.asset }}"
+          else
+            mkdir dmg && cp -R dist/TorrentDL.app dmg/ && ln -s /Applications dmg/Applications
+            hdiutil create -volname TorrentDL -srcfolder dmg -ov -format UDZO "out/${{ matrix.asset }}"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: out/${{ matrix.asset }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          body: |
+            **Download the file for your computer:**
+
+            | Computer | File |
+            | --- | --- |
+            | Windows 10 / 11 | `TorrentDL-Windows.exe` |
+            | Mac with Apple Silicon (M1, M2, M3, M4…) | `TorrentDL-Mac-AppleSilicon.dmg` |
+            | Older Intel Mac | `TorrentDL-Mac-Intel.dmg` |
+
+            Not sure which Mac you have?  → About This Mac. "Chip: Apple M…" means Apple Silicon.
+
+            The app isn't signed by Apple or Microsoft yet, so the first launch shows a warning. See the README for the one-time click-through.
