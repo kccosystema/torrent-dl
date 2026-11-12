@@ -23,6 +23,7 @@ jobs:
           - os: macos-15-intel        # older Intel Macs
             asset: TorrentDL-Mac-Intel.dmg
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
@@ -42,10 +43,11 @@ jobs:
         run: pyinstaller -y TorrentDL.spec
 
       - name: Self-test the built app
+        timeout-minutes: 5
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then BIN=./dist/TorrentDL.exe; else BIN=./dist/TorrentDL.app/Contents/MacOS/TorrentDL; fi
           set +e
-          "$BIN" --selftest --state-dir "$RUNNER_TEMP/st"
+          timeout 120 "$BIN" --selftest --state-dir "$RUNNER_TEMP/st"
           code=$?
           set -e
           cat "$RUNNER_TEMP/st/selftest.txt" || echo "no selftest output"

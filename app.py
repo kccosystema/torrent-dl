@@ -7,6 +7,7 @@ to opening the UI in your normal web browser.
 from __future__ import annotations
 
 import argparse
+import os
 import signal
 import json
 import sys
@@ -18,6 +19,16 @@ from pathlib import Path
 from torrentdl import __version__
 from torrentdl.engine import Engine
 from torrentdl.server import Server
+
+
+_LOG: Path | None = None
+
+
+def stage(msg: str) -> None:
+    """Selftest breadcrumbs (windowed Windows builds have no console)."""
+    if _LOG is not None:
+        with open(_LOG, "a") as f:
+            f.write(f"{time.strftime('%H:%M:%S')} {msg}\n")
 
 
 class Api:
@@ -46,10 +57,12 @@ class Api:
 
 def selftest(engine: Engine, server: Server) -> int:
     """Used by CI on the packaged app: start everything, hit the API, exit."""
+    stage("engine and server started")
     with urllib.request.urlopen(f"http://127.0.0.1:{server.port}/api/state?token={server.token}") as r:
         state = json.load(r)
     with urllib.request.urlopen(f"http://127.0.0.1:{server.port}/") as r:
         assert b"TorrentDL" in r.read()
+    stage("api answered")
     window = "n/a"
     if sys.platform in ("win32", "darwin"):
         try:  # make sure the native window toolkit made it into the bundle
@@ -59,6 +72,7 @@ def selftest(engine: Engine, server: Server) -> int:
             else:
                 from webview.platforms import cocoa  # noqa: F401
             window = "ok"
+            stage("native window support loaded")
         except Exception as e:
             return _report(engine, f"selftest FAILED: native window support missing: {e!r}", 2)
     return _report(engine, f"selftest ok: window {window}, libtorrent {__import__('libtorrent').__version__}, "
@@ -68,7 +82,7 @@ def selftest(engine: Engine, server: Server) -> int:
 def _report(engine: Engine, msg: str, code: int) -> int:
     # windowed builds have no console on Windows, so also leave the result in a file
     print(msg)
-    (engine.state_dir / "selftest.txt").write_text(msg + "\n")
+    stage(msg)
     return code
 
 
@@ -79,6 +93,13 @@ def main() -> int:
     ap.add_argument("--selftest", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--version", action="version", version=__version__)
     args, _ = ap.parse_known_args()  # macOS may pass -psn_… args
+
+    global _LOG
+    if args.selftest:
+        _LOG = Path(args.state_dir or ".") / "selftest.txt"
+        _LOG.parent.mkdir(parents=True, exist_ok=True)
+        _LOG.write_text("")
+        stage("started")
 
     engine = Engine(Path(args.state_dir) if args.state_dir else None)
     server = Server(engine)
@@ -115,8 +136,15 @@ def main() -> int:
         return 0
     finally:
         engine.shutdown()
+        stage("engine shut down (progress saved)")
         server.stop()
+        stage("server stopped")
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    code = main()
+    stage(f"exiting with {code}")
+    sys.stdout and sys.stdout.flush()
+    # Everything is saved by now. Exit immediately rather than wait on
+    # library teardown (network threads, the window toolkit's runtime).
+    os._exit(code or 0)
