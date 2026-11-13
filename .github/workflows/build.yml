@@ -6,6 +6,11 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish a release with this version number (e.g. 1.0.0). Leave empty to just build."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -75,7 +80,7 @@ jobs:
           path: out/${{ matrix.asset }}
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release != ''
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -85,6 +90,9 @@ jobs:
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.release != '' && format('v{0}', inputs.release) || github.ref_name }}
+          name: ${{ inputs.release != '' && format('TorrentDL {0}', inputs.release) || github.ref_name }}
+          target_commitish: ${{ github.sha }}
           files: out/*
           body: |
             **Download the file for your computer:**
