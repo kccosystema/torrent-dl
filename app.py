@@ -22,6 +22,7 @@ from torrentdl.server import Server
 
 
 _LOG: Path | None = None
+_FAULT_FILE = None
 
 
 def stage(msg: str) -> None:
@@ -99,6 +100,10 @@ def main() -> int:
         _LOG = Path(args.state_dir or ".") / "selftest.txt"
         _LOG.parent.mkdir(parents=True, exist_ok=True)
         _LOG.write_text("")
+        import faulthandler  # if something native crashes, record where
+        global _FAULT_FILE
+        _FAULT_FILE = open(_LOG.with_name("crash.txt"), "w")
+        faulthandler.enable(_FAULT_FILE, all_threads=True)
         stage("started")
 
     engine = Engine(Path(args.state_dir) if args.state_dir else None)

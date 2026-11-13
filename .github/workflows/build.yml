@@ -48,11 +48,15 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then BIN=./dist/TorrentDL.exe; else BIN=./dist/TorrentDL.app/Contents/MacOS/TorrentDL; fi
           set +e
-          # (macOS has no `timeout` command; use Python's)
-          python -c "import subprocess,sys; sys.exit(subprocess.run(sys.argv[1:], timeout=120).returncode)" "$BIN" --selftest --state-dir "$RUNNER_TEMP/st"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            timeout 120 "$BIN" --selftest --state-dir "$RUNNER_TEMP/st"   # Git Bash has `timeout`
+          else
+            "$BIN" --selftest --state-dir "$RUNNER_TEMP/st"               # step timeout-minutes guards it
+          fi
           code=$?
           set -e
           cat "$RUNNER_TEMP/st/selftest.txt" || echo "no selftest output"
+          [ -s "$RUNNER_TEMP/st/crash.txt" ] && { echo "--- crash report"; cat "$RUNNER_TEMP/st/crash.txt"; }
           exit $code
 
       - name: Package
